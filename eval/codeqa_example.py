@@ -3,11 +3,24 @@ Example: CodeQA evaluation on LongBench-v2, mirroring eval/oolong_example.py.
 Runs multiple RLM configurations and appends summary accuracy to a CSV after each run.
 
 Usage:
-  uv run python eval/codeqa_example.py --num-samples 10 --start-index 0
-  uv run python eval/codeqa_example.py --all
-  vllm serve Qwen/Qwen3-8B-Instruct --port 8001
-  vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct --port 8000 --tensor-parallel-size 8 --enable-expert-parallel
-  uv run python eval/codeqa_example.py --backend vllm --vllm-model qwen3-8b --all
+  sbatch eval/run_eval.slurm eval/codeqa_example.py \
+    --backend vllm \
+    --vllm-model qwen3-8b \
+    --all
+
+  sbatch eval/run_eval.slurm eval/codeqa_example.py \
+    --backend vllm \
+    --vllm-model qwen3-coder-480b-a35b-fp8 \
+    --all
+
+  sbatch eval/run_eval.slurm eval/codeqa_example.py \
+    --backend vllm \
+    --vllm-model qwen3-coder-30b-a3b \
+    --all
+
+vLLM serve commands for each preset are executed inside eval/run_eval.slurm.
+
+to debug, run without --all.
 """
 
 import argparse
@@ -35,23 +48,40 @@ except ImportError:
     )
     sys.exit(1)
 
-RESULTS_CSV = Path("logs") / "codeqa_results.csv"
+RESULTS_CSV_PREFIX = "codeqa_results"
 DATASET_NAME = "zai-org/LongBench-v2"
 DATASET_SPLIT = "train"
 CODEQA_PREFIX = "code"
 LETTER_BY_NUMBER = {"1": "A", "2": "B", "3": "C", "4": "D"}
 VLLM_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
-    "qwen3-coder-480b-a35b": {
-        "model_name": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+    "qwen3-coder-480b-a35b-fp8": {
+        "model_name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
         "base_url": "http://localhost:8000/v1",
-        "max_iterations": 12,
+        "max_iterations": 20,
     },
     "qwen3-8b": {
         "model_name": "Qwen/Qwen3-8B-Instruct",
         "base_url": "http://localhost:8001/v1",
         "max_iterations": 20,
     },
+    "qwen3-coder-30b-a3b": {
+        "model_name": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "base_url": "http://localhost:8002/v1",
+        "max_iterations": 20,
+    },
 }
+
+
+def sanitize_model_name(model_name: str) -> str:
+    """Normalize a model name to a filesystem-safe suffix."""
+    sanitized = re.sub(r"[^a-zA-Z0-9]+", "-", model_name.strip()).strip("-").lower()
+    return sanitized or "unknown-model"
+
+
+def build_results_csv_path(model_name: str) -> Path:
+    """Build the results CSV path with a model name suffix."""
+    suffix = sanitize_model_name(model_name)
+    return Path("logs") / f"{RESULTS_CSV_PREFIX}_{suffix}.csv"
 
 
 @dataclass(frozen=True)
@@ -115,6 +145,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override vLLM base URL (defaults to preset value)",
     )
+    parser.add_argument(
+        "--vllm-model-name",
+        default=None,
+        help="Override vLLM model name (defaults to preset value)",
+    )
     return parser.parse_args()
 
 
@@ -155,6 +190,11 @@ def load_all_codeqa_rows(filter_field: str) -> list[dict]:
         filtered = dataset.filter(
             lambda ex: str(ex["sub_domain"]).lower().startswith(CODEQA_PREFIX)
         )
+    expected_count = 50
+    if len(filtered) != expected_count:
+        raise ValueError(
+            f"Expected {expected_count} CodeQA rows after filter, found {len(filtered)}"
+        )
     return list(filtered)
 
 
@@ -176,10 +216,11 @@ def build_backend_selection(
     if args.backend == "vllm":
         model_config = VLLM_MODEL_CONFIGS[args.vllm_model]
         base_url = args.vllm_base_url or model_config["base_url"]
+        model_name = args.vllm_model_name or model_config["model_name"]
         api_key = get_api_key("vllm")
         backend_kwargs = {
             "base_url": base_url,
-            "model_name": model_config["model_name"],
+            "model_name": model_name,
             "api_key": api_key,
         }
         other_backend_kwargs = [backend_kwargs.copy(), backend_kwargs.copy()]
@@ -451,10 +492,11 @@ def main() -> None:
     run_configs = build_run_configs(
         backend, backend_kwargs, other_backend_kwargs, max_iterations
     )
+    results_csv_path = build_results_csv_path(backend_kwargs.get("model_name", "unknown"))
 
     for run_config in run_configs:
         metrics = run_config_over_rows(logger, run_config, rows)
-        append_summary(RESULTS_CSV, run_config, metrics)
+        append_summary(results_csv_path, run_config, metrics)
         print_summary(run_config, metrics)
 
 
