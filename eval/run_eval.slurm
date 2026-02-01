@@ -18,6 +18,8 @@ fi
 ARGS=("$@")
 BACKEND="openai"
 VLLM_MODEL="qwen3-8b"
+VLLM_API_SERVER_COUNT="${VLLM_API_SERVER_COUNT:-1}"
+VLLM_GENERATION_CONFIG="${VLLM_GENERATION_CONFIG:-vllm}"
 for ((i = 0; i < ${#ARGS[@]}; i++)); do
   arg="${ARGS[$i]}"
   case "$arg" in
@@ -65,6 +67,25 @@ raise SystemExit(f"Timed out waiting for vLLM to start on port {port}")
 PY
 }
 
+cleanup_vllm() {
+  if [ -z "${VLLM_PID:-}" ]; then
+    return
+  fi
+
+  if kill -0 "$VLLM_PID" 2>/dev/null; then
+    kill "$VLLM_PID" 2>/dev/null || true
+    for _ in {1..30}; do
+      if ! kill -0 "$VLLM_PID" 2>/dev/null; then
+        wait "$VLLM_PID" 2>/dev/null || true
+        VLLM_PID=""
+        return
+      fi
+      sleep 1
+    done
+  fi
+  VLLM_PID=""
+}
+
 start_vllm() {
   local model="$1"
   local log_path="logs/vllm-${SLURM_JOB_ID:-local}-${model}.log"
@@ -72,7 +93,11 @@ start_vllm() {
   case "$model" in
     qwen3-8b)
       VLLM_PORT=8001
-      vllm serve Qwen/Qwen3-8B --port 8001 --data-parallel-size 8 >"$log_path" 2>&1 &
+      vllm serve Qwen/Qwen3-8B \
+        --port 8001 \
+        --data-parallel-size 8 \
+        --api-server-count "$VLLM_API_SERVER_COUNT" \
+        --generation-config "$VLLM_GENERATION_CONFIG" >"$log_path" 2>&1 &
       ;;
     qwen3-coder-480b-a35b-fp8)
       VLLM_PORT=8000
@@ -82,6 +107,8 @@ start_vllm() {
         --gpu-memory-utilization 0.9 \
         --enable-expert-parallel \
         --data-parallel-size 8 \
+        --api-server-count "$VLLM_API_SERVER_COUNT" \
+        --generation-config "$VLLM_GENERATION_CONFIG" \
         --enable-auto-tool-choice \
         --tool-call-parser qwen3_coder >"$log_path" 2>&1 &
       ;;
@@ -90,6 +117,8 @@ start_vllm() {
       vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
         --port 8002 \
         --data-parallel-size 8 \
+        --api-server-count "$VLLM_API_SERVER_COUNT" \
+        --generation-config "$VLLM_GENERATION_CONFIG" \
         --max-model-len 131072 \
         --gpu-memory-utilization 0.90 \
         --kv-cache-dtype fp8_e4m3 \
@@ -103,7 +132,7 @@ start_vllm() {
   esac
 
   VLLM_PID=$!
-  trap 'if [ -n "${VLLM_PID:-}" ]; then kill "$VLLM_PID" 2>/dev/null || true; fi' EXIT
+  trap cleanup_vllm EXIT INT TERM
   wait_for_vllm "$VLLM_PORT"
 }
 
