@@ -3,6 +3,8 @@ Quickstart: Local vLLM backend with Docker execution.
 
 Setup:
     1. Start vLLM OpenAI-compatible server, e.g.:
+       vllm serve meta-llama/Llama-3-70b --port 8000
+       # or:
        python -m vllm.entrypoints.openai.api_server --model meta-llama/Llama-3-70b --port 8000
     2. Ensure Docker is running.
     3. Run: python -m examples.quickstart_vllm_docker

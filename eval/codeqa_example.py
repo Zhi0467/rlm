@@ -5,6 +5,9 @@ Runs multiple RLM configurations and appends summary accuracy to a CSV after eac
 Usage:
   uv run python eval/codeqa_example.py --num-samples 10 --start-index 0
   uv run python eval/codeqa_example.py --all
+  vllm serve Qwen/Qwen3-8B-Instruct --port 8001
+  vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct --port 8000 --tensor-parallel-size 8 --enable-expert-parallel
+  uv run python eval/codeqa_example.py --backend vllm --vllm-model qwen3-8b --all
 """
 
 import argparse
@@ -37,13 +40,29 @@ DATASET_NAME = "zai-org/LongBench-v2"
 DATASET_SPLIT = "train"
 CODEQA_PREFIX = "code"
 LETTER_BY_NUMBER = {"1": "A", "2": "B", "3": "C", "4": "D"}
+VLLM_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
+    "qwen3-coder-480b-a35b": {
+        "model_name": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        "base_url": "http://localhost:8000/v1",
+        "max_iterations": 12,
+    },
+    "qwen3-8b": {
+        "model_name": "Qwen/Qwen3-8B-Instruct",
+        "base_url": "http://localhost:8001/v1",
+        "max_iterations": 20,
+    },
+}
 
 
 @dataclass(frozen=True)
 class RLMRunConfig:
     name: str
     recursive_max_depth: int
+    backend: str
     backend_kwargs: dict[str, Any]
+    max_iterations: int
+    environment: str = "local"
+    environment_kwargs: dict[str, Any] | None = None
     other_backends: list[str] | None = None
     other_backend_kwargs: list[dict[str, Any]] | None = None
 
@@ -78,6 +97,23 @@ def parse_args() -> argparse.Namespace:
         "--all",
         action="store_true",
         help="Evaluate all rows (ignores --num-samples and --start-index)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["openai", "vllm"],
+        default="openai",
+        help="Backend to use for the eval (openai or vllm)",
+    )
+    parser.add_argument(
+        "--vllm-model",
+        choices=sorted(VLLM_MODEL_CONFIGS.keys()),
+        default="qwen3-8b",
+        help="vLLM model preset (used when --backend vllm)",
+    )
+    parser.add_argument(
+        "--vllm-base-url",
+        default=None,
+        help="Override vLLM base URL (defaults to preset value)",
     )
     return parser.parse_args()
 
@@ -122,33 +158,67 @@ def load_all_codeqa_rows(filter_field: str) -> list[dict]:
     return list(filtered)
 
 
-def get_api_key() -> str:
-    """Fetch the OpenAI API key from the environment."""
+def get_api_key(backend: str) -> str:
+    """Fetch the API key for the requested backend."""
+    if backend == "vllm":
+        return os.environ.get("VLLM_API_KEY", "EMPTY")
+
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY environment variable is not set.")
     return api_key
 
 
-def build_run_configs(api_key: str) -> list[RLMRunConfig]:
+def build_backend_selection(
+    args: argparse.Namespace,
+) -> tuple[str, dict[str, Any], list[dict[str, Any]], int]:
+    """Resolve backend settings from CLI args."""
+    if args.backend == "vllm":
+        model_config = VLLM_MODEL_CONFIGS[args.vllm_model]
+        base_url = args.vllm_base_url or model_config["base_url"]
+        api_key = get_api_key("vllm")
+        backend_kwargs = {
+            "base_url": base_url,
+            "model_name": model_config["model_name"],
+            "api_key": api_key,
+        }
+        other_backend_kwargs = [backend_kwargs.copy(), backend_kwargs.copy()]
+        return "vllm", backend_kwargs, other_backend_kwargs, model_config["max_iterations"]
+
+    api_key = get_api_key("openai")
+    backend_kwargs = {"model_name": "gpt-5-mini", "api_key": api_key}
+    other_backend_kwargs = [
+        {"model_name": "gpt-5-nano", "api_key": api_key},
+        {"model_name": "gpt-5-nano", "api_key": api_key},
+    ]
+    return "openai", backend_kwargs, other_backend_kwargs, 20
+
+
+def build_run_configs(
+    backend: str,
+    backend_kwargs: dict[str, Any],
+    other_backend_kwargs: list[dict[str, Any]],
+    max_iterations: int,
+) -> list[RLMRunConfig]:
     """Build RLM run configurations for the eval."""
     return [
         RLMRunConfig(
             name="depth-1",
             recursive_max_depth=1,
-            backend_kwargs={"model_name": "gpt-5-mini", "api_key": api_key},
-            other_backends=["openai"],
-            other_backend_kwargs=[{"model_name": "gpt-5-nano", "api_key": api_key}],
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+            max_iterations=max_iterations,
+            other_backends=[backend],
+            other_backend_kwargs=other_backend_kwargs[:1],
         ),
         RLMRunConfig(
             name="depth-2",
             recursive_max_depth=2,
-            backend_kwargs={"model_name": "gpt-5-mini", "api_key": api_key},
-            other_backends=["openai", "openai"],
-            other_backend_kwargs=[
-                {"model_name": "gpt-5-nano", "api_key": api_key},
-                {"model_name": "gpt-5-nano", "api_key": api_key},
-            ],
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+            max_iterations=max_iterations,
+            other_backends=[backend, backend],
+            other_backend_kwargs=other_backend_kwargs[:2],
         ),
     ]
 
@@ -156,10 +226,11 @@ def build_run_configs(api_key: str) -> list[RLMRunConfig]:
 def build_rlm(logger: RLMLogger, run_config: RLMRunConfig) -> RLM:
     """Construct an RLM instance for a run configuration."""
     return RLM(
-        backend="openai",
+        backend=run_config.backend,
         backend_kwargs=run_config.backend_kwargs,
-        environment="local",
-        max_iterations=20,
+        environment=run_config.environment,
+        environment_kwargs=run_config.environment_kwargs,
+        max_iterations=run_config.max_iterations,
         recursive_max_depth=run_config.recursive_max_depth,
         other_backends=run_config.other_backends,
         other_backend_kwargs=run_config.other_backend_kwargs,
@@ -365,7 +436,6 @@ def print_summary(run_config: RLMRunConfig, metrics: RunMetrics) -> None:
 def main() -> None:
     """Entry point for the CodeQA eval runner."""
     args = parse_args()
-    api_key = get_api_key()
 
     if args.all:
         rows = load_all_codeqa_rows(args.filter_field)
@@ -375,7 +445,12 @@ def main() -> None:
         raise ValueError("No rows loaded from dataset")
 
     logger = RLMLogger(log_dir="./logs")
-    run_configs = build_run_configs(api_key)
+    backend, backend_kwargs, other_backend_kwargs, max_iterations = build_backend_selection(
+        args
+    )
+    run_configs = build_run_configs(
+        backend, backend_kwargs, other_backend_kwargs, max_iterations
+    )
 
     for run_config in run_configs:
         metrics = run_config_over_rows(logger, run_config, rows)
