@@ -72,7 +72,7 @@ start_vllm() {
   case "$model" in
     qwen3-8b)
       VLLM_PORT=8001
-      vllm serve Qwen/Qwen3-8B-Instruct --port 8001 --data-parallel-size 8 >"$log_path" 2>&1 &
+      vllm serve Qwen/Qwen3-8B --port 8001 --data-parallel-size 8 >"$log_path" 2>&1 &
       ;;
     qwen3-coder-480b-a35b-fp8)
       VLLM_PORT=8000

@@ -60,7 +60,7 @@ VLLM_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
         "max_iterations": 20,
     },
     "qwen3-8b": {
-        "model_name": "Qwen/Qwen3-8B-Instruct",
+        "model_name": "Qwen/Qwen3-8B",
         "base_url": "http://localhost:8001/v1",
         "max_iterations": 20,
     },
