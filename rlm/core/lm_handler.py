@@ -14,6 +14,11 @@ from rlm.core.comms_utils import LMRequest, LMResponse, socket_recv, socket_send
 from rlm.core.types import ModelUsageSummary, RLMChatCompletion, UsageSummary
 
 
+class LMHandlerError(Exception):
+    """Raised when an LM client call fails."""
+
+
+
 class LMRequestHandler(StreamRequestHandler):
     """Socket handler for LLM completion requests."""
 
@@ -222,7 +227,11 @@ class LMHandler:
 
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct completion call (for main process use)."""
-        return self.get_client(model).completion(prompt)
+        client = self.get_client(model)
+        try:
+            return client.completion(prompt)
+        except Exception as exc:
+            raise LMHandlerError(f"{type(exc).__name__}: {exc}") from exc
 
     def __enter__(self):
         self.start()

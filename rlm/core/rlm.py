@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from rlm.clients import BaseLM, get_client
-from rlm.core.lm_handler import LMHandler
+from rlm.core.lm_handler import LMHandler, LMHandlerError
 from rlm.core.recursion_utils import select_backend_for_depth
 from rlm.core.types import (
     ClientBackend,
@@ -267,11 +267,47 @@ class RLM:
                     build_user_prompt(root_prompt, i, context_count, history_count)
                 ]
 
-                iteration: RLMIteration = self._completion_turn(
-                    prompt=current_prompt,
-                    lm_handler=lm_handler,
-                    environment=environment,
-                )
+                try:
+                    iteration: RLMIteration = self._completion_turn(
+                        prompt=current_prompt,
+                        lm_handler=lm_handler,
+                        environment=environment,
+                    )
+                except LMHandlerError as exc:
+                    final_answer = f"Error: {exc}"
+                    iteration = RLMIteration(
+                        prompt=current_prompt,
+                        response=final_answer,
+                        code_blocks=[],
+                        final_answer=final_answer,
+                    )
+                    if self.logger:
+                        self.logger.log(iteration)
+                    self.verbose.print_iteration(iteration, i + 1)
+
+                    time_end = time.perf_counter()
+                    usage = lm_handler.get_usage_summary()
+                    depth_call_counts = lm_handler.get_depth_call_counts()
+                    max_depth_reached = (
+                        max(depth_call_counts) if depth_call_counts else self.depth
+                    )
+                    self.verbose.print_final_answer(final_answer)
+                    self.verbose.print_summary(i + 1, time_end - time_start, usage.to_dict())
+
+                    if self.persistent and isinstance(environment, SupportsPersistence):
+                        environment.add_history(message_history)
+
+                    return RLMChatCompletion(
+                        root_model=self.backend_kwargs.get("model_name", "unknown")
+                        if self.backend_kwargs
+                        else "unknown",
+                        prompt=prompt,
+                        response=final_answer,
+                        usage_summary=usage,
+                        execution_time=time_end - time_start,
+                        depth_call_counts=depth_call_counts,
+                        max_depth_reached=max_depth_reached,
+                    )
 
                 # Check if RLM is done and has a final answer.
                 final_answer = find_final_answer(iteration.response, environment=environment)
@@ -379,7 +415,10 @@ class RLM:
                 "content": "Please provide a final answer to the user's question based on the information provided.",
             }
         ]
-        response = lm_handler.completion(current_prompt)
+        try:
+            response = lm_handler.completion(current_prompt)
+        except LMHandlerError as exc:
+            return f"Error: {exc}"
 
         if self.logger:
             self.logger.log(
