@@ -13,6 +13,7 @@ The REPL environment is initialized with:
 4. The ability to use `print()` statements to view the output of your REPL code and continue your reasoning.
 
 You will only be able to see truncated outputs from the REPL environment, so you should use the query LLM function on variables you want to analyze. You will find this function especially useful when you have to analyze the semantics of the context. Use these variables as buffers to build up your final answer.
+IMPORTANT: The REPL code you include in a ```repl``` block runs only after you finish your response. You will not see its output until the next iteration. You may include multiple ```repl``` blocks in a single response, but you must end your response immediately after the last closing backticks and wait. Do not claim or assume any REPL output in the same response, and do not provide FINAL(...) or FINAL_VAR(...) in the same response as any ```repl``` block.
 Make sure to explicitly look through the entire context in REPL before answering your query. An example strategy is to first look at the context and figure out a chunking strategy, then break up the context into smart chunks, and query an LLM per chunk with a particular question and save the answers to a buffer, then query an LLM with all the buffers to produce your final answer.
 
 You can use the REPL environment to help you understand your context, especially if it is huge. Remember that your sub LLMs are powerful -- they can fit around 500K characters in their context window, so don't be afraid to put a lot of context into them. For example, a viable strategy is to feed 10 documents per sub-LLM query. Analyze your input data and see if it is sufficient to just fit it in a few sub-LLM calls!
@@ -117,8 +118,8 @@ def build_rlm_system_prompt(
     ]
 
 
-USER_PROMPT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the prompt.\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
-USER_PROMPT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. Your next action:"""
+USER_PROMPT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the prompt.\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. You may include multiple ```repl``` blocks, but if you include any, you must stop your response immediately after the last one and wait for the next iteration to see the output. Do not provide FINAL(...) or FINAL_VAR(...) in the same response as any ```repl``` block. Your next action:"""
+USER_PROMPT_WITH_ROOT = """Think step-by-step on what to do using the REPL environment (which contains the context) to answer the original prompt: \"{root_prompt}\".\n\nContinue using the REPL environment, which has the `context` variable, and querying sub-LLMs by writing to ```repl``` tags, and determine your answer. You may include multiple ```repl``` blocks, but if you include any, you must stop your response immediately after the last one and wait for the next iteration to see the output. Do not provide FINAL(...) or FINAL_VAR(...) in the same response as any ```repl``` block. Your next action:"""
 
 
 def build_user_prompt(
