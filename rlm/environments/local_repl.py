@@ -3,6 +3,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import sys
 import tempfile
 import threading
@@ -135,6 +136,16 @@ class LocalREPL(NonIsolatedEnv):
         self._lock = threading.Lock()
         self._context_count: int = 0
         self._history_count: int = 0
+        self.code_execution_timeout = kwargs.get("code_execution_timeout")
+        if self.code_execution_timeout is not None:
+            if not isinstance(self.code_execution_timeout, int) or isinstance(
+                self.code_execution_timeout, bool
+            ):
+                raise ValueError("code_execution_timeout must be an int")
+            if self.code_execution_timeout <= 0:
+                raise ValueError("code_execution_timeout must be > 0")
+            if not hasattr(signal, "SIGALRM"):
+                raise ValueError("code_execution_timeout requires SIGALRM support")
 
         # Setup globals, locals, and modules in environment.
         self.setup()
@@ -341,8 +352,25 @@ class LocalREPL(NonIsolatedEnv):
         # Clear pending LLM calls from previous execution
         self._pending_llm_calls = []
 
+        timeout = self.code_execution_timeout
+        previous_handler = None
+
+        def handle_timeout(signum, frame):
+            raise TimeoutError(
+                f"REPL execution exceeded {timeout} seconds"
+            )
+
         with self._capture_output() as (stdout_buf, stderr_buf), self._temp_cwd():
             try:
+                if timeout is not None:
+                    if threading.current_thread() is not threading.main_thread():
+                        raise RuntimeError(
+                            "code_execution_timeout requires running in the main thread"
+                        )
+                    previous_handler = signal.getsignal(signal.SIGALRM)
+                    signal.signal(signal.SIGALRM, handle_timeout)
+                    signal.alarm(timeout)
+
                 combined = {**self.globals, **self.locals}
                 exec(code, combined, combined)
 
@@ -356,6 +384,11 @@ class LocalREPL(NonIsolatedEnv):
             except Exception as e:
                 stdout = stdout_buf.getvalue()
                 stderr = stderr_buf.getvalue() + f"\n{type(e).__name__}: {e}"
+            finally:
+                if timeout is not None:
+                    signal.alarm(0)
+                    if previous_handler is not None:
+                        signal.signal(signal.SIGALRM, previous_handler)
 
         return REPLResult(
             stdout=stdout,

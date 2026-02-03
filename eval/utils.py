@@ -171,11 +171,16 @@ def build_run_configs(
 
 def build_rlm(logger: RLMLogger, run_config: RLMRunConfig) -> RLM:
     """Construct an RLM instance for a run configuration."""
+    env_kwargs = (
+        run_config.environment_kwargs.copy() if run_config.environment_kwargs else {}
+    )
+    if "code_execution_timeout" not in env_kwargs:
+        env_kwargs["code_execution_timeout"] = 300
     return RLM(
         backend=run_config.backend,
         backend_kwargs=run_config.backend_kwargs,
         environment=run_config.environment,
-        environment_kwargs=run_config.environment_kwargs,
+        environment_kwargs=env_kwargs,
         max_iterations=run_config.max_iterations,
         recursive_max_depth=run_config.recursive_max_depth,
         other_backends=run_config.other_backends,

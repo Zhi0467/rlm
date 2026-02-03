@@ -412,7 +412,10 @@ class RLM:
         current_prompt = message_history + [
             {
                 "role": "assistant",
-                "content": "Please provide a final answer to the user's question based on the information provided.",
+                "content": (
+                    "Please provide a final answer to the user's question based on the information "
+                    "provided. You must wrap your answer in FINAL(...) or FINAL_VAR(...)."
+                ),
             }
         ]
         try:
