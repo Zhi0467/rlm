@@ -31,6 +31,42 @@ def _strip_fenced_code(text: str) -> str:
     return re.sub(r"```.*?```", "\n", text, flags=re.DOTALL)
 
 
+def _resolve_final_var(variable_name: str, environment: "BaseEnv | None") -> str | None:
+    if environment is None:
+        return None
+    result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
+    final_answer = result.stdout.strip()
+    if final_answer == "":
+        final_answer = result.stderr.strip() or ""
+    return final_answer
+
+
+def _resolve_fstring(content: str, environment: "BaseEnv | None") -> str | None:
+    """
+    Resolve a simple f-string with {identifier} placeholders using environment variables.
+    Returns the resolved string, or None if it cannot be resolved.
+    """
+    if environment is None:
+        return None
+
+    match = re.fullmatch(r'''f(["'])(.*)\1''', content, re.DOTALL)
+    if not match:
+        return None
+
+    raw = match.group(2)
+    placeholders = re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)
+    if not placeholders:
+        return raw
+
+    resolved = raw
+    for name in dict.fromkeys(placeholders):
+        value = _resolve_final_var(name, environment)
+        if value is None:
+            return None
+        resolved = resolved.replace(f"{{{name}}}", value)
+    return resolved
+
+
 def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | None:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return the final answer string.
@@ -47,31 +83,27 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     """
     cleaned_text = _strip_fenced_code(text)
 
-    # Check for FINAL_VAR pattern first - must be at start of line (outside code fences)
+    # Check for FINAL_VAR pattern first - must be at start of line (code fences allowed)
     final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
-    match = re.search(final_var_pattern, cleaned_text, re.MULTILINE | re.DOTALL)
+    match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
-        if environment is not None:
-            result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
-            final_answer = result.stdout.strip()
-            if final_answer == "":
-                final_answer = result.stderr.strip() or ""
-            return final_answer
-        return None
+        return _resolve_final_var(variable_name, environment)
 
     # Check for FINAL pattern - must be at start of line (outside code fences)
     # Use greedy matching to capture content with nested parentheses
     final_pattern = r"^\s*FINAL\((.*)\)\s*$"
     match = re.search(final_pattern, cleaned_text, re.MULTILINE | re.DOTALL)
     if match:
-        return match.group(1).strip()
+        content = match.group(1).strip()
+        resolved = _resolve_fstring(content, environment)
+        return resolved if resolved is not None else content
 
     # Check for a standalone \boxed{...} (or /boxed{...}) on the final line
     lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
     if lines:
         last_line = lines[-1]
-        if re.match(r"^(\\boxed|/boxed)\{.*\}$", last_line):
+        if "\\boxed{" in last_line or "/boxed{" in last_line:
             return last_line
 
     return None
