@@ -26,6 +26,11 @@ def find_code_blocks(text: str) -> list[str]:
     return results
 
 
+def _strip_fenced_code(text: str) -> str:
+    """Remove triple-backtick fenced code blocks from text."""
+    return re.sub(r"```.*?```", "\n", text, flags=re.DOTALL)
+
+
 def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | None:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return the final answer string.
@@ -40,9 +45,11 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
-    # Check for FINAL_VAR pattern first - must be at start of line
+    cleaned_text = _strip_fenced_code(text)
+
+    # Check for FINAL_VAR pattern first - must be at start of line (outside code fences)
     final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
-    match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
+    match = re.search(final_var_pattern, cleaned_text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
         if environment is not None:
@@ -53,12 +60,19 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
             return final_answer
         return None
 
-    # Check for FINAL pattern - must be at start of line
+    # Check for FINAL pattern - must be at start of line (outside code fences)
     # Use greedy matching to capture content with nested parentheses
     final_pattern = r"^\s*FINAL\((.*)\)\s*$"
-    match = re.search(final_pattern, text, re.MULTILINE | re.DOTALL)
+    match = re.search(final_pattern, cleaned_text, re.MULTILINE | re.DOTALL)
     if match:
         return match.group(1).strip()
+
+    # Check for a standalone \boxed{...} (or /boxed{...}) on the final line
+    lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
+    if lines:
+        last_line = lines[-1]
+        if re.match(r"^(\\boxed|/boxed)\{.*\}$", last_line):
+            return last_line
 
     return None
 
