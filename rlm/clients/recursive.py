@@ -90,7 +90,8 @@ class RecursiveRLMClient(BaseLM):
             logger=None,
             persistent=False,
         )
-        completion = rlm.completion(prompt)
+        root_prompt = prompt if isinstance(prompt, str) else None
+        completion = rlm.completion(prompt, root_prompt=root_prompt)
         self.record_usage_summary(completion.usage_summary)
         self.record_depth_call_counts(completion.depth_call_counts)
         return completion.response

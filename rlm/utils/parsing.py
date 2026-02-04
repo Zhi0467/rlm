@@ -26,12 +26,12 @@ def find_code_blocks(text: str) -> list[str]:
     return results
 
 
-def _strip_fenced_code(text: str) -> str:
+def strip_fenced_code(text: str) -> str:
     """Remove triple-backtick fenced code blocks from text."""
     return re.sub(r"```.*?```", "\n", text, flags=re.DOTALL)
 
 
-def _resolve_final_var(variable_name: str, environment: "BaseEnv | None") -> str | None:
+def resolve_final_var(variable_name: str, environment: "BaseEnv | None") -> str | None:
     if environment is None:
         return None
     result = environment.execute_code(f"print(FINAL_VAR({variable_name!r}))")
@@ -41,7 +41,7 @@ def _resolve_final_var(variable_name: str, environment: "BaseEnv | None") -> str
     return final_answer
 
 
-def _resolve_fstring(content: str, environment: "BaseEnv | None") -> str | None:
+def resolve_fstring(content: str, environment: "BaseEnv | None") -> str | None:
     """
     Resolve a simple f-string with {identifier} placeholders using environment variables.
     Returns the resolved string, or None if it cannot be resolved.
@@ -60,7 +60,7 @@ def _resolve_fstring(content: str, environment: "BaseEnv | None") -> str | None:
 
     resolved = raw
     for name in dict.fromkeys(placeholders):
-        value = _resolve_final_var(name, environment)
+        value = resolve_final_var(name, environment)
         if value is None:
             return None
         resolved = resolved.replace(f"{{{name}}}", value)
@@ -81,14 +81,14 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     Returns:
         The final answer string, or None if no final answer pattern is found
     """
-    cleaned_text = _strip_fenced_code(text)
+    cleaned_text = strip_fenced_code(text)
 
     # Check for FINAL_VAR pattern first - must be at start of line (code fences allowed)
     final_var_pattern = r"^\s*FINAL_VAR\((.*?)\)"
     match = re.search(final_var_pattern, text, re.MULTILINE | re.DOTALL)
     if match:
         variable_name = match.group(1).strip().strip('"').strip("'")
-        return _resolve_final_var(variable_name, environment)
+        return resolve_final_var(variable_name, environment)
 
     # Check for FINAL pattern - must be at start of line (outside code fences)
     # Use greedy matching to capture content with nested parentheses
@@ -96,7 +96,7 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
     match = re.search(final_pattern, cleaned_text, re.MULTILINE | re.DOTALL)
     if match:
         content = match.group(1).strip()
-        resolved = _resolve_fstring(content, environment)
+        resolved = resolve_fstring(content, environment)
         return resolved if resolved is not None else content
 
     # Check for a standalone \boxed{...} (or /boxed{...}) on the final line
