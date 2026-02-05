@@ -17,6 +17,11 @@ Usage:
     --backend vllm \
     --vllm-model qwen3-coder-30b-a3b \
     --all
+    
+  sbatch eval/run_eval.slurm eval/codeqa_example.py \
+    --backend vllm \
+    --vllm-model qwen3-coder-next \
+    --all
 
 vLLM serve commands for each preset are executed inside eval/run_eval.slurm.
 

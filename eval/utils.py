@@ -27,17 +27,22 @@ VLLM_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
     "qwen3-coder-480b-a35b-fp8": {
         "model_name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
         "base_url": "http://localhost:8000/v1",
-        "max_iterations": 20,
+        "max_iterations": 12,
     },
     "qwen3-8b": {
         "model_name": "Qwen/Qwen3-8B",
         "base_url": "http://localhost:8001/v1",
-        "max_iterations": 20,
+        "max_iterations": 12,
     },
     "qwen3-coder-30b-a3b": {
         "model_name": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         "base_url": "http://localhost:8002/v1",
-        "max_iterations": 20,
+        "max_iterations": 12,
+    },
+    "qwen3-coder-next": {
+        "model_name": "Qwen/Qwen3-Coder-Next",
+        "base_url": "http://localhost:8003/v1",
+        "max_iterations": 12,
     },
 }
 

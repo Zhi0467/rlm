@@ -96,6 +96,18 @@ start_vllm() {
         --max-num-seqs 8 \
         --max-num-batched-tokens 16k >"$log_path" 2>&1 &
       ;;
+    qwen3-coder-next)
+      VLLM_PORT=8003
+      vllm serve Qwen/Qwen3-Coder-Next \
+      --port 8003 \
+      --tensor-parallel-size 2 \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_coder \
+      --gpu-memory-utilization 0.9 \
+      --max-model-len 65536 \
+      --max-num-seqs 8 \
+      --max-num-batched-tokens 16k >"$log_path" 2>&1 &
+      ;;
     *)
       echo "Unknown vLLM model preset: $model" >&2
       exit 1
