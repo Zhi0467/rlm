@@ -128,6 +128,21 @@ multiline answer)"""
         result = find_final_answer(text)
         assert result == "answer with spaces"
 
+    def test_strict_standalone_boxed_fallback(self):
+        text = "\\boxed{42}"
+        result = find_final_answer(text)
+        assert result == "\\boxed{42}"
+
+    def test_boxed_fallback_requires_single_nonempty_line(self):
+        text = "Intermediate reasoning\n\\boxed{42}"
+        result = find_final_answer(text)
+        assert result is None
+
+    def test_boxed_fallback_rejects_empty_box(self):
+        text = "\\boxed{}"
+        result = find_final_answer(text)
+        assert result is None
+
     def test_final_with_nested_parentheses_greedy_matching(self):
         """Test that greedy matching captures content with nested parentheses correctly.
         Greedy matching (.*) matches to the last closing parenthesis, correctly handling

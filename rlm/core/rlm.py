@@ -354,7 +354,7 @@ class RLM:
 
             # Default behavior: we run out of iterations, provide one final answer
             time_end = time.perf_counter()
-            final_answer = self._default_answer(message_history, lm_handler)
+            final_answer = self._default_answer(message_history, lm_handler, environment)
             usage = lm_handler.get_usage_summary()
             depth_call_counts = lm_handler.get_depth_call_counts()
             max_depth_reached = max(depth_call_counts) if depth_call_counts else self.depth
@@ -404,7 +404,12 @@ class RLM:
             iteration_time=iteration_time,
         )
 
-    def _default_answer(self, message_history: list[dict[str, Any]], lm_handler: LMHandler) -> str:
+    def _default_answer(
+        self,
+        message_history: list[dict[str, Any]],
+        lm_handler: LMHandler,
+        environment: BaseEnv,
+    ) -> str:
         """
         Default behavior if the RLM runs out of iterations and does not find a final answer.
         It will take the message history, and try to generate a final answer from it.
@@ -423,17 +428,20 @@ class RLM:
         except LMHandlerError as exc:
             return f"Error: {exc}"
 
+        parsed_response = find_final_answer(response, environment=environment)
+        final_answer = parsed_response if parsed_response is not None else response
+
         if self.logger:
             self.logger.log(
                 RLMIteration(
                     prompt=current_prompt,
                     response=response,
-                    final_answer=response,
+                    final_answer=final_answer,
                     code_blocks=[],
                 )
             )
 
-        return response
+        return final_answer
 
     def _fallback_answer(self, message: str | dict[str, Any]) -> str:
         """

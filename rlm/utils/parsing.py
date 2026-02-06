@@ -67,6 +67,22 @@ def resolve_fstring(content: str, environment: "BaseEnv | None") -> str | None:
     return resolved
 
 
+def extract_standalone_boxed_answer(cleaned_text: str) -> str | None:
+    """Return a boxed answer only when it is the sole non-empty line and non-empty."""
+    lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
+    if len(lines) != 1:
+        return None
+
+    line = lines[0]
+    for prefix in ("\\boxed{", "/boxed{"):
+        if line.startswith(prefix) and line.endswith("}"):
+            content = line[len(prefix) : -1]
+            if content.strip():
+                return line
+            return None
+    return None
+
+
 def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | None:
     """
     Find FINAL(...) or FINAL_VAR(...) statement in response and return the final answer string.
@@ -99,12 +115,10 @@ def find_final_answer(text: str, environment: "BaseEnv | None" = None) -> str | 
         resolved = resolve_fstring(content, environment)
         return resolved if resolved is not None else content
 
-    # Check for a standalone \boxed{...} (or /boxed{...}) on the final line
-    lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
-    if lines:
-        last_line = lines[-1]
-        if "\\boxed{" in last_line or "/boxed{" in last_line:
-            return last_line
+    # Check for a strict standalone \boxed{...} (or /boxed{...}) fallback
+    boxed_answer = extract_standalone_boxed_answer(cleaned_text)
+    if boxed_answer is not None:
+        return boxed_answer
 
     return None
 

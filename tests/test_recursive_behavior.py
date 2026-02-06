@@ -96,3 +96,45 @@ def test_recursive_turn_decay_spawns_sub_rlms():
     assert clients["root"].call_count == 2
     assert clients["depth1"].call_count == 2
     assert clients["depth2"].call_count == 2
+
+
+def test_default_answer_resolves_final_when_iterations_exhausted():
+    root_responses = [
+        "Need one more step before finalizing.",
+        "FINAL(resolved in fallback)",
+    ]
+    client = FakeLM("root", root_responses)
+
+    with patch.object(rlm_module, "get_client", return_value=client):
+        rlm = RLM(
+            backend="root",
+            backend_kwargs={},
+            environment="local",
+            recursive_max_depth=1,
+            max_iterations=1,
+        )
+        result = rlm.completion("root context")
+
+    assert result.response == "resolved in fallback"
+    assert client.call_count == 2
+
+
+def test_default_answer_resolves_final_var_when_iterations_exhausted():
+    root_responses = [
+        "Preparing answer variable.\n```repl\nfinal_var = r\"\\boxed{293}\"\n```",
+        "FINAL_VAR(final_var)",
+    ]
+    client = FakeLM("root", root_responses)
+
+    with patch.object(rlm_module, "get_client", return_value=client):
+        rlm = RLM(
+            backend="root",
+            backend_kwargs={},
+            environment="local",
+            recursive_max_depth=1,
+            max_iterations=1,
+        )
+        result = rlm.completion("root context")
+
+    assert result.response == r"\boxed{293}"
+    assert client.call_count == 2

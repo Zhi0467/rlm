@@ -3,6 +3,9 @@ Example: AIME25 evaluation.
 Runs multiple RLM configurations and appends summary accuracy to a CSV after each run.
 
 Usage:
+  # Run with OpenAI backend
+  uv run eval/aime_example.py --backend openai --num-samples 5
+
   sbatch eval/run_eval.slurm eval/aime_example.py \
     --backend vllm \
     --vllm-model qwen3-8b \

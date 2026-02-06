@@ -22,27 +22,24 @@ EXPECTED_ANSWER_BUILDER: ExpectedAnswerBuilder | None = None
 ROOT_PROMPT_BUILDER: RootPromptBuilder | None = None
 EVALUATE_RESPONSE: EvaluateResponse | None = None
 CURRENT_ROOT_PROMPT: str | None = None
+MAX_ITERATIONS: int = 10
 
 VLLM_MODEL_CONFIGS: dict[str, dict[str, Any]] = {
     "qwen3-coder-480b-a35b-fp8": {
         "model_name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
         "base_url": "http://localhost:8000/v1",
-        "max_iterations": 12,
     },
     "qwen3-8b": {
         "model_name": "Qwen/Qwen3-8B",
         "base_url": "http://localhost:8001/v1",
-        "max_iterations": 12,
     },
     "qwen3-coder-30b-a3b": {
         "model_name": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
         "base_url": "http://localhost:8002/v1",
-        "max_iterations": 12,
     },
     "qwen3-coder-next": {
         "model_name": "Qwen/Qwen3-Coder-Next",
         "base_url": "http://localhost:8003/v1",
-        "max_iterations": 12,
     },
 }
 
@@ -53,7 +50,7 @@ class RLMRunConfig:
     recursive_max_depth: int
     backend_kwargs: dict[str, Any]
     backend: str = "openai"
-    max_iterations: int = 20
+    max_iterations: int = MAX_ITERATIONS
     environment: str = "local"
     environment_kwargs: dict[str, Any] | None = None
     other_backends: list[str] | None = None
@@ -134,7 +131,7 @@ def build_backend_selection(
             "api_key": api_key,
         }
         other_backend_kwargs = [backend_kwargs.copy(), backend_kwargs.copy()]
-        return "vllm", backend_kwargs, other_backend_kwargs, model_config["max_iterations"]
+        return "vllm", backend_kwargs, other_backend_kwargs, MAX_ITERATIONS
 
     api_key = get_api_key("openai")
     backend_kwargs = {"model_name": "gpt-5-mini", "api_key": api_key}
@@ -142,7 +139,7 @@ def build_backend_selection(
         {"model_name": "gpt-5-nano", "api_key": api_key},
         {"model_name": "gpt-5-nano", "api_key": api_key},
     ]
-    return "openai", backend_kwargs, other_backend_kwargs, 20
+    return "openai", backend_kwargs, other_backend_kwargs, MAX_ITERATIONS
 
 
 def build_run_configs(
